@@ -17,15 +17,14 @@ if($_SERVER["REQUEST_METHOD"] == "GET" && !empty($_GET)){
 	if($api_key == $credentials){
 		$lat = $_GET["lat"];
 		$lon = $_GET["lon"];
-		$rssi = $_GET["rssi"];
 
 		$lastUpdate = date("d-m-Y H:i:s");
 		$new_data= array(
 			'LastUpdate' => $lastUpdate,
 			'Latitude' => $lat,
 			'Longitude' => $lon,
-			'RSSI' => $rssi
 		);
+		
 		print_r($new_data);
 		 
 		$firebase = new \Firebase\FirebaseLib($url, $token);
