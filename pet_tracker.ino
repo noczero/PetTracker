@@ -24,9 +24,17 @@ unsigned long time_gps = 0;
 #define BuzzerPIN 32 
 
 // SIM800L Define
+#include "SIM800L.h"
+#define SIM800_RST_PIN 4
 #define RX1 18 // pin D18 RX serial1 for TX sim
 #define TX1 19 // pin D19 TX serial1 for RX sim
 HardwareSerial SerialSIM(1);
+SIM800L* sim800l;
+
+const char APN[] = "internet";
+char dataSend[90];
+char format[90] = "http://pet.zeroinside.net/insert_data.php?lat=%f&lon=%f&api_key=pet123";
+
 
 // Access Point Mode
 #include <WiFi.h>              //wifi library for ESp32 to access other functionalities
@@ -34,6 +42,8 @@ HardwareSerial SerialSIM(1);
 const char *Apssid = "PetTracker";     //Give AccessPoint name whatever you like. (this will be Name of your esp32 HOTSPOT)
 const char *Appassword = "123456789";         //Password of your Esp32's hotspot,(minimum length 8 required)
 
+// WebServer
+// #include "ESPAsyncWebServer.h"
 
 void setup() {
   // put your setup code here, to run once:
@@ -57,7 +67,7 @@ void setup() {
   setupAP();
 
   // send SMS
-  trySendSMS();
+  // trySendSMS();
   
   delay(100);
 }
@@ -72,7 +82,7 @@ void setupAP(){
   // WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, brown_reg_temp); //enable brownout detector
   
   // You can remove the Appassword parameter if you want the hotspot to be open.
-  WiFi.softAP(Apssid);      //Starting AccessPoint on given credential
+  WiFi.softAP(Apssid,Appassword);      //Starting AccessPoint on given credential
   delay(100);
   IPAddress myIP = WiFi.softAPIP();     //IP Address of our Esp8266 accesspoint(where we can host webpages, and see data)
   Serial.print("AP IP address: ");
@@ -93,6 +103,32 @@ void setupSIM800L(){
   Serial.println("Serial GSM Txd is on pin: " + String (TX1));
   Serial.println("Serial GSM Rxd is on pin: " + String (RX1));
   delay(100);
+
+  // Initialize SIM800L driver with an internal buffer of 200 bytes and a reception buffer of 512 bytes, debug disabled
+  sim800l = new SIM800L((Stream *)&SerialSIM, SIM800_RST_PIN, 200, 512);
+
+  // Equivalent line with the debug enabled on the Serial
+  // sim800l = new SIM800L((Stream *)&Serial1, SIM800_RST_PIN, 200, 512, (Stream *)&Serial);
+
+  // Setup module for GPRS communication
+  setupModuleGPRS();
+}
+
+void setupModuleGPRS(){
+  // Wait until the module is ready to accept AT commands
+  while(!sim800l->isReady()) {
+    Serial.println(F("Problem to initialize AT command, retry in 1 sec"));
+    delay(1000);
+  }
+  Serial.println(F("Setup Complete!"));
+
+  // Setup APN for GPRS configuration
+  bool success = sim800l->setupGPRS(APN);
+  while(!success) {
+    success = sim800l->setupGPRS(APN);
+    delay(5000);
+  }
+  Serial.println(F("GPRS config OK"));
 }
 
 void setupBuzzer(){
@@ -122,6 +158,70 @@ void trySendSMS(){
   delay(2000);
   SerialSIM.println((char)26);
   Serial.println("Success...");
+}
+
+void sendData(){
+  // Establish GPRS connectivity (5 trials)
+  bool connected = false;
+  for(uint8_t i = 0; i < 5 && !connected; i++) {
+    delay(1000);
+    connected = sim800l->connectGPRS();
+  }
+
+  // Check if connected, if not reset the module and setup the config again
+  if(connected) {
+    Serial.println(F("GPRS connected !"));
+  } else {
+    Serial.println(F("GPRS not connected !"));
+    Serial.println(F("Reset the module."));
+    sim800l->reset(); 
+    setupModuleGPRS();
+    return;
+  }
+  
+  sprintf(dataSend, format, latitude, longitude); // convert to string based on format URL
+  Serial.println(dataSend);
+
+  // Do HTTP GET communication with 10s for the timeout (read)
+  uint16_t rc = sim800l->doGet(dataSend, 10000); // send request dataSend
+  if(rc == 200) {
+    // Success, output the data received on the serial
+    Serial.print(F("HTTP GET successful ("));
+    Serial.print(sim800l->getDataSizeReceived());
+    Serial.println(F(" bytes)"));
+    Serial.print(F("Received : "));
+    Serial.println(sim800l->getDataReceived());
+  } else {
+    // Failed...
+    Serial.print(F("HTTP GET error "));
+    Serial.println(rc);
+  }
+
+  // Close GPRS connectivity (5 trials)
+  bool disconnected = sim800l->disconnectGPRS();
+  for(uint8_t i = 0; i < 5 && !connected; i++) {
+    delay(1000);
+    disconnected = sim800l->disconnectGPRS();
+  }
+  
+  if(disconnected) {
+    Serial.println(F("GPRS disconnected !"));
+  } else {
+    Serial.println(F("GPRS still connected !"));
+  }
+}
+
+String command;
+void trySendData(){
+  if (Serial.available() > 0){
+    command = Serial.readStringUntil('\n');
+    if(command.equals("send")){
+      Serial.println("Send Data");
+      sendData();
+    } else {
+      Serial.println("Invalid Command");
+    }
+  }
 }
 
 void fastBeep(){
@@ -188,7 +288,9 @@ void loop() {
   smartDelay(500);
   if (millis() > 5000 && gps.charsProcessed() < 10)
     Serial.println(F("No GPS data received: check wiring"));
-  
+
+  // try send data
+  trySendData();
   
   EasyBuzzer.update(); // buzzer update
   delay(100);
