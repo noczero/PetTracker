@@ -194,18 +194,20 @@ void sendData(){
 
   // Do HTTP GET communication with 10s for the timeout (read)
   uint16_t rc = sim800l->doGet(dataSend, 10000); // send request dataSend
-  if(rc == 200) {
-    // Success, output the data received on the serial
-    Serial.print(F("HTTP GET successful ("));
-    Serial.print(sim800l->getDataSizeReceived());
-    Serial.println(F(" bytes)"));
-    Serial.print(F("Received : "));
-    Serial.println(sim800l->getDataReceived());
-  } else {
-    // Failed...
-    Serial.print(F("HTTP GET error "));
-    Serial.println(rc);
-  }
+
+  // see respone data, comment this to save data
+  //  if(rc == 200) {
+  //    // Success, output the data received on the serial
+  //    Serial.print(F("HTTP GET successful ("));
+  //    Serial.print(sim800l->getDataSizeReceived());
+  //    Serial.println(F(" bytes)"));
+  //    Serial.print(F("Received : "));
+  //    Serial.println(sim800l->getDataReceived());
+  //  } else {
+  //    // Failed...
+  //    Serial.print(F("HTTP GET error "));
+  //    Serial.println(rc);
+  //  }
 
   // Close GPRS connectivity (5 trials)
   bool disconnected = sim800l->disconnectGPRS();
