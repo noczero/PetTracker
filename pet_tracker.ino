@@ -28,8 +28,12 @@ unsigned long time_gps = 0;
 #define SIM800_RST_PIN 4
 #define RX1 18 // pin D18 RX serial1 for TX sim
 #define TX1 19 // pin D19 TX serial1 for RX sim
+#define INTERVAL_SEND 2000 // set 2 second to set data
+
 HardwareSerial SerialSIM(1);
 SIM800L* sim800l;
+unsigned long time_send = 0;
+
 
 const char APN[] = "internet";
 char dataSend[90];
@@ -230,6 +234,14 @@ void trySendData(){
   }
 }
 
+void sendDataInterval(){
+  if (millis() > time_send+ INTERVAL_SEND){
+    time_send = millis();
+    Serial.println("Sending Data...");
+    sendData();
+  }
+}
+
 void fastBeep(){
   EasyBuzzer.beep(
     1000,    // Frequency in hertz(HZ). 
@@ -299,7 +311,8 @@ void setupWebServer(){
         } else {
             message = "No message sent";
         }
-        request->send(200, "text/json",  message );
+        String json_format = "{\"rssi\":" + message + "}";
+        request->send(200, "application/json",  json_format ); // return json application
         
         rssi = message.toInt(); // set message to rssi integer
     });
@@ -324,8 +337,11 @@ void loop() {
   if (millis() > 5000 && gps.charsProcessed() < 10)
     Serial.println(F("No GPS data received: check wiring"));
 
-  // try send data
+  // try send data using serial.
   trySendData();
+
+  // interval send data
+  sendDataInterval();
   
   EasyBuzzer.update(); // buzzer update
   delay(100);
