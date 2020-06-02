@@ -22,6 +22,8 @@ unsigned long time_gps = 0;
 
 // Buzzer define
 #define BuzzerPIN 32 
+#define INTERVAL_RSSI_BUZZ 1000
+unsigned long time_rssi_buzz = 0;
 
 // SIM800L Define
 #include "SIM800L.h"
@@ -50,36 +52,39 @@ const char *Appassword = "123456789";         //Password of your Esp32's hotspot
 #include <ESPAsyncWebServer.h>
 AsyncWebServer server(80);
 const char* PARAM_MESSAGE = "rssi";
-int rssi = 0;
+int rssi = -100;
 
 void setup() {
   // put your setup code here, to run once:
+  setupOnBoardLED();
+  
   Serial.begin(115200);
   Serial.println("Start Pet Tracker");
-  delay(100);
+  delay(500);
   
   // Start GPS
   setupGPS();
+  delay(500);
   
   // Start SIM800L
   setupSIM800L();
+  delay(500);
   
   // Start Buzzer  
   setupBuzzer();
-
-  // On Board LED
-  setupOnBoardLED();
+  delay(500);
   
   // Start ESP32 Access Point
   setupAP();
-
+  delay(500);
+  
   // send SMS
   // trySendSMS();
 
   // Start Web Server
   setupWebServer();
+  delay(500);
   
-  delay(100);
 }
 
 void setupAP(){
@@ -144,6 +149,7 @@ void setupModuleGPRS(){
 void setupBuzzer(){
   EasyBuzzer.setPin(BuzzerPIN);
   //fastBeep();
+  checkRSSIBeep();
   Serial.println("Buzzer activated");
   delay(100);
 }
@@ -230,6 +236,9 @@ void trySendData(){
     if(command.equals("send")){
       Serial.println("Send Data");
       sendData();
+    } else if (command.equals("sms")){
+      Serial.println("Send SMS");
+      trySendSMS();
     } else {
       Serial.println("Invalid Command");
     }
@@ -239,20 +248,54 @@ void trySendData(){
 void sendDataInterval(){
   if (millis() > time_send+ INTERVAL_SEND){
     time_send = millis();
-    Serial.println("Sending Data...");
-    sendData();
+    if (gps.location.isUpdated() && gps.location.isValid()){
+      Serial.println("Sending Data...");
+      sendData();
+    }
   }
 }
 
-void fastBeep(){
-  EasyBuzzer.beep(
-    1000,    // Frequency in hertz(HZ). 
-    50,   // On Duration in milliseconds(ms).
-    100,  // Off Duration in milliseconds(ms).
-    5,      // The number of beeps per cycle.
-    500,  // Pause duration.
-    5
-  );
+int threshold_rssi = -70;
+void checkRSSIBeep(){
+   if (millis() > time_rssi_buzz+ INTERVAL_RSSI_BUZZ){
+     time_rssi_buzz = millis(); // save the millis
+     Serial.print("Time before : ");
+     Serial.println(time_rssi_buzz);
+     // check rssi more than threshold
+     if (rssi > threshold_rssi) {
+          int estimate_duration = 5000 / rssi;
+          estimate_duration = abs(estimate_duration);
+          Serial.print("estimate duration : "); Serial.println(estimate_duration);
+          time_rssi_buzz -= estimate_duration; // reduce time to faster the millis
+          Serial.print("Time after : ");
+          Serial.println(time_rssi_buzz);
+          
+          tone(BuzzerPIN, 550, estimate_duration, 0); //turnOn
+     }
+   } else {
+      noTone(BuzzerPIN,0); // turnOff
+   }
+} 
+
+void tone(uint8_t pin, unsigned int frequency, unsigned int duration, uint8_t channel)
+{
+    if (ledcRead(channel)) {
+        log_e("Tone channel %d is already in use", ledcRead(channel));
+        return;
+    }
+    ledcAttachPin(pin, channel);
+    ledcWriteTone(channel, frequency);
+
+    if(duration){
+      delay(duration);
+      noTone(pin,0);
+    }
+}
+
+void noTone(uint8_t pin, uint8_t channel)
+{
+    ledcDetachPin(pin);
+    ledcWrite(channel, 0);
 }
 
 void readGPS(){
@@ -344,6 +387,9 @@ void loop() {
 
   // interval send data
   sendDataInterval();
+
+  // interval buzzer rssi
+  checkRSSIBeep();
   
   EasyBuzzer.update(); // buzzer update
   delay(100);
