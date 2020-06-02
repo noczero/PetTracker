@@ -33,8 +33,7 @@ SIM800L* sim800l;
 
 const char APN[] = "internet";
 char dataSend[90];
-char format[90] = "http://pet.zeroinside.net/insert_data.php?lat=%f&lon=%f&api_key=pet123";
-
+char format[90] = "http://pet.zeroinside.net/insert_data.php?lat=%f&lon=%f&rssi=%d&api_key=pet123"; // %f float, %d integer
 
 // Access Point Mode
 #include <WiFi.h>              //wifi library for ESp32 to access other functionalities
@@ -43,7 +42,11 @@ const char *Apssid = "PetTracker";     //Give AccessPoint name whatever you like
 const char *Appassword = "123456789";         //Password of your Esp32's hotspot,(minimum length 8 required)
 
 // WebServer
-// #include "ESPAsyncWebServer.h"
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+AsyncWebServer server(80);
+const char* PARAM_MESSAGE = "rssi";
+int rssi = 0;
 
 void setup() {
   // put your setup code here, to run once:
@@ -68,6 +71,9 @@ void setup() {
 
   // send SMS
   // trySendSMS();
+
+  // Start Web Server
+  setupWebServer();
   
   delay(100);
 }
@@ -179,7 +185,7 @@ void sendData(){
     return;
   }
   
-  sprintf(dataSend, format, latitude, longitude); // convert to string based on format URL
+  sprintf(dataSend, format, latitude, longitude, rssi); // convert to string based on format URL
   Serial.println(dataSend);
 
   // Do HTTP GET communication with 10s for the timeout (read)
@@ -254,6 +260,7 @@ void printData(){
       // print to serial
       Serial.print("Lat: "); Serial.print(latitude,6);
       Serial.print("\t Lon: "); Serial.print(longitude,6);
+      Serial.print("\t RSSI : "); Serial.print(rssi);
       
       // print enter
       Serial.println();
@@ -272,6 +279,34 @@ static void smartDelay(unsigned long ms)
       // encode gps data using tiny gps
       gps.encode(SerialGPS.read());
   } while (millis() - start < ms);
+}
+
+void notFound(AsyncWebServerRequest *request) {
+    request->send(404, "text/plain", "Not found");
+}
+
+void setupWebServer(){
+    Serial.println("Enabled Web Server");
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+      request->send(200, "text/plain", "Pet Tracker Device Ver. 1");
+    });
+    
+     // Send a GET request to <IP>/set_rssi?rssi=<value>
+    server.on("/set_rssi", HTTP_GET, [] (AsyncWebServerRequest *request) {
+        String message;
+        if (request->hasParam(PARAM_MESSAGE)) {
+            message = request->getParam(PARAM_MESSAGE)->value();
+        } else {
+            message = "No message sent";
+        }
+        request->send(200, "text/json",  message );
+        
+        rssi = message.toInt(); // set message to rssi integer
+    });
+    
+    server.onNotFound(notFound);
+    
+    server.begin();
 }
 
 
